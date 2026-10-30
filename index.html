@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neuroevolution Explainer</title>
+<link rel="stylesheet" href="style.css">
+<script src="js/core.js"></script>
+<script src="js/algorithms.js"></script>
+<script src="js/app.js"></script>
+</head>
+<body>
+<header class="hero">
+  <h1>How to Neuroevolve</h1>
+  <p>Eleven ways to teach the same tiny neural network, from backpropagation to evolution strategies. Step through each algorithm one stage at a time and watch every forward pass.</p>
+</header>
+
+<aside id="tour" class="tour" aria-live="polite">
+  <div class="tour-top"><span class="tour-label">Guided tour · <span id="tour-n"></span></span><button id="tour-close" class="ghost" aria-label="Close guide">✕</button></div>
+  <h2 id="tour-title"></h2>
+  <p id="tour-text"></p>
+  <div class="tour-nav"><button id="tour-prev">◂ Back</button><button id="tour-next" class="primary"></button></div>
+</aside>
+<button id="tour-open" class="tour-open" hidden>? Guided tour</button>
+
+<main>
+<section id="playground">
+  <div id="families" class="families"></div>
+
+  <div class="toolbar">
+    <label>task <select id="task"><option value="linear">Linear</option><option value="xor" selected>XOR</option><option value="circle">Circle</option></select></label>
+    <label>population <input id="popsize" type="range" min="4" max="64" step="2"><span id="popsize-val"></span></label>
+    <label>σ <input id="sigma" type="number" min="0" max="2" step="0.01"></label>
+    <label><span id="lr-label">learning rate</span> <input id="lr" type="number" min="0" max="5" step="0.01"></label>
+    <label>seed <input id="seed" type="number" value="7" min="1"></label>
+    <span class="spacer"></span>
+    <button id="step" class="primary"></button>
+    <button id="stepgen">Full generation ⏭</button>
+    <button id="run"></button>
+    <button id="reset">Reset</button>
+    <span id="gen" class="gen"></span>
+    <label class="mathtoggle"><input id="showmath" type="checkbox"> Show math</label>
+  </div>
+
+  <div id="pipeline" class="pipeline"></div>
+
+  <div class="grid top">
+    <div class="panel" id="panel-data">
+      <h3>Task &amp; decision map</h3>
+      <canvas id="dataplot" width="280" height="280" aria-label="Data points over the network's decision map. Click to choose a point."></canvas>
+      <div id="data-stats" class="stats"></div>
+      <p class="caption">Blue = class 1, orange = class 0. The background is the network's prediction p. <b>Click a point</b> to trace it through the network.</p>
+    </div>
+    <div class="panel" id="panel-net">
+      <h3>Forward pass · <span id="net-title"></span></h3>
+      <svg id="net" viewBox="0 0 600 385" role="img" aria-label="Network diagram"></svg>
+      <div class="netbar">
+        <button id="animate">Animate forward pass</button>
+        <label><input id="showgrad" type="checkbox"> show backprop gradients</label>
+      </div>
+      <p id="net-legend" class="caption"></p>
+    </div>
+    <div class="panel" id="panel-detail">
+      <h3>Neuron arithmetic</h3>
+      <div id="detail" class="detail"></div>
+    </div>
+  </div>
+
+  <div class="grid bottom">
+    <div class="panel" id="panel-pop">
+      <h3>Population <small>(click to inspect)</small></h3>
+      <div id="pop" class="pop"></div>
+      <p id="pop-caption" class="caption"></p>
+    </div>
+    <div class="panel" id="panel-params">
+      <h3>Parameters as one vector θ ∈ ℝ<sup>17</sup></h3>
+      <div id="params" class="params"></div>
+      <p class="caption">Every optimizer only ever sees this flat vector. The network diagram is just a way of reading it.</p>
+      <h3>Loss per generation</h3>
+      <svg id="chart" viewBox="0 0 320 150"></svg>
+      <p class="caption"><span class="key center"></span> loss of the center (μ, θ or best) <span class="key best"></span> best member that generation</p>
+    </div>
+  </div>
+</section>
+
+<article>
+  <h2>0 · Evolution strategies in plain words</h2>
+  <p>Imagine you are on a hillside in thick fog and want to reach the bottom of the valley. You can't see the slope. What you <em>can</em> do is send a few friends a couple of steps in random directions and ask each one, "how high are you now?"</p>
+  <ol class="steps">
+    <li><b>Ask.</b> Send friends out in random directions from where you stand. These are the <em>candidates</em>.</li>
+    <li><b>Evaluate.</b> Each friend reports their altitude. In machine learning this is the <em>loss</em>: how wrong a network is.</li>
+    <li><b>Shape.</b> Turn the reports into votes. Often only the ranking matters ("Ana was lowest, Ben second…"), so one wild report can't fool you.</li>
+    <li><b>Tell.</b> Take a step toward the friends who were lowest. Repeat.</li>
+  </ol>
+  <p>That is an evolution strategy. Here the "position" is the network's 17 knobs (weights), a "friend" is a copy of the network with slightly nudged knobs, and "altitude" is the loss on the coloured dots.</p>
+  <p><b>Why not just compute the slope?</b> When you can, you should. That is backpropagation, and it is very efficient. But sometimes the slope doesn't exist or is hard to compute: a robot in a physics simulator, a game score, a rounded or discrete decision. Evolution only needs to <em>run</em> the thing and read a score. Every friend can also be tested at the same time on a different computer.</p>
+
+  <h2>1 · The network and the task</h2>
+  <p>Every algorithm on this page trains the same model: a two-layer perceptron with 2 inputs, 4 tanh hidden neurons and 1 sigmoid output. It classifies points in the plane.</p>
+  <pre class="eq">z₁ = W₁ x + b₁        (4×2 matrix, 4 biases)
+h  = tanh(z₁)
+z₂ = W₂ h + b₂        (1×4 matrix, 1 bias)
+p  = σ(z₂)            probability of class 1
+L  = −mean[ y log p + (1−y) log(1−p) ]</pre>
+  <p>That is 17 numbers in total. Each hidden neuron draws one straight line across the plane. tanh turns that line into a soft step: +1 on one side, −1 on the other. The output adds up four such steps. Four lines are enough to carve XOR or a rough circle. Training means finding 17 numbers that put the lines in the right places.</p>
+  <p>The thumbnails inside the network diagram are the key to reading it. Like the activation maps in <a href="https://poloclub.github.io/cnn-explainer/">CNN Explainer</a>, each one shows what that neuron outputs for <em>every</em> possible input, not just the selected point.</p>
+
+  <h2>2 · One loop for every algorithm</h2>
+  <p><a href="https://github.com/RobertTLange/evosax">evosax</a> writes every evolution strategy as the same <b>ask–evaluate–tell</b> loop:</p>
+  <pre class="code">es = CMA_ES(population_size=32, solution=dummy_solution)
+params = es.default_params
+state = es.init(key, dummy_solution, params)
+
+for i in range(num_generations):
+    key, key_ask, key_eval = jax.random.split(key, 3)
+    population, state = es.ask(key_ask, state, params)     # 1. propose candidates
+    fitness = ...                                           # 2. forward passes
+    state, metrics = es.tell(key, population, fitness, state, params)  # 3+4. shape & update</pre>
+  <p>The playground splits <code>tell</code> into two boxes. <b>Shape</b> turns raw fitness into weights (evosax passes a <code>fitness_shaping_fn</code> to each algorithm). <b>Tell</b> uses those weights to update the state. Here fitness is the loss, so lower is better.</p>
+  <p>Backpropagation fits the same mold. Its "population" is a single network, "shape" is the backward pass, and "tell" is a gradient step. Seeing them side by side makes the difference clear: backprop asks the network <em>which direction is downhill</em>, and evolution strategies find out by <em>trying directions and comparing</em>.</p>
+
+  <h2 id="components">3 · The parts, boxed by what they share</h2>
+  <p>Each algorithm is a choice of one component per stage. Hover over a component to highlight every algorithm that uses it. evosax organises its code the same way: <code>algorithms/distribution_based</code>, <code>algorithms/population_based</code>, and shared pieces such as fitness shaping in <code>evosax.core</code>.</p>
+  <div class="tablewrap"><table id="cmap" class="cmap"></table></div>
+
+  <h2>4 · The families</h2>
+  <div class="cards">
+    <div class="card"><h4>Exact gradient · Backprop + gradient descent</h4>
+      <p>One forward pass stores the activations. The backward pass applies the chain rule from the loss back to every weight: δ₂ = p − y, δ₁ = δ₂·W₂ ⊙ (1 − h²), ∂L/∂W = δ·aᵀ. Then θ ← θ − η∇L.</p>
+      <p>This is exact and cheap: one forward and one backward pass, whatever the number of parameters. But it needs a differentiable model and loss, and it only sees the local slope. Turn on <i>show backprop gradients</i> to see δ on each neuron and ∂L/∂w on each edge.</p></div>
+
+    <div class="card"><h4>ES · gradient estimators (OpenES, PGPE, EGGROLL)</h4>
+      <p>These methods blur the loss with Gaussian noise and descend the blurred version. Its gradient can be estimated without differentiating anything: ∇E[L(μ+σε)] = E[L(μ+σε)·ε]/σ. Sample ε, run forward passes, and weight each ε by how good it was (<a href="https://arxiv.org/abs/1703.03864">Salimans et al., 2017</a>).</p>
+      <p><b>Mirrored sampling</b> evaluates +ε and −ε, which cancels much of the noise. <b>Centered ranks</b> replace losses by ranks, so outliers can't dominate. The estimate is passed to an ordinary optimizer such as Adam. After each <i>Tell</i>, the playground prints the cosine similarity between this estimate and the true backprop gradient.</p>
+      <p><b>PGPE</b> (<a href="https://doi.org/10.1016/j.neunet.2009.12.004">Sehnke et al., 2010</a>) also learns a separate σ for every parameter. If a symmetric pair both did better than average, wider search along that direction pays off.</p></div>
+
+    <div class="card" id="eggroll"><h4>ES · EGGROLL (low-rank perturbations)</h4>
+      <p>From <a href="https://arxiv.org/abs/2511.16652">"Evolution Strategies at the Hyperscale"</a> (Sarkar et al., 2025). For a big layer W ∈ ℝ<sup>m×n</sup>, every population member needs its own m×n noise matrix, and every forward pass is a separate matrix multiply. EGGROLL replaces the noise with a low-rank product E = A Bᵀ/√r, where A ∈ ℝ<sup>m×r</sup> and B ∈ ℝ<sup>n×r</sup>.</p>
+      <pre class="eq">(W + σ A Bᵀ) x  =  W x  +  σ A (Bᵀ x)
+   shared by the whole population ↑     ↑ only r extra numbers per member</pre>
+      <p>Each perturbation is rank r, but the update sums many of them, so its rank can reach min(N·r, m, n). The paper shows the update approaches full-rank OpenES as r grows. Here r = 1 on tiny 4×2 and 1×4 layers, so nothing is saved, but the structure is visible: select an EGGROLL member to see its W₁ noise as a·bᵀ. EGGROLL is not part of evosax; this is a minimal re-implementation of the idea.</p></div>
+
+    <div class="card"><h4>ES · natural gradient (SNES)</h4>
+      <p>Natural Evolution Strategies (<a href="https://jmlr.org/papers/v15/wierstra14a.html">Wierstra et al., 2014</a>) treat the search distribution's parameters as what is being optimized. They follow the <em>natural</em> gradient, which measures steps by how much the distribution changes rather than by raw parameter distance. For a separable Gaussian (SNES, <a href="https://doi.org/10.1145/2001576.2001692">Schaul et al., 2011</a>) this gives two simple rules: μ moves by σ ⊙ Σ uᵢzᵢ, and σ is multiplied by exp(η/2 · Σ uᵢ(zᵢ² − 1)). The uᵢ are rank-based utilities. xNES is the full-covariance version.</p></div>
+
+    <div class="card"><h4>ES · recombination &amp; adaptation (SimpleES, CMA-ES)</h4>
+      <p>These methods estimate no gradient. They <b>recombine</b>: the new center is a weighted average of the best half. SimpleES then sets each σ from the elite's spread.</p>
+      <p><b>CMA-ES</b> (<a href="https://arxiv.org/abs/1604.00772">Hansen, tutorial</a>) learns a full covariance matrix C, so the sampling cloud can stretch along directions that keep paying off. Two <em>evolution paths</em> remember recent steps. One drives a rank-one update of C; the other grows σ when consecutive steps point the same way and shrinks it when they cancel. The correlation heat-map under the parameters shows what C has learned. Storing C costs O(D²) memory, which is why Sep-CMA-ES and other diagonal variants exist for large networks.</p></div>
+
+    <div class="card"><h4>Population-based (SimpleGA, DE, PSO)</h4>
+      <p>These methods keep actual individuals instead of a distribution.</p>
+      <p><b>Genetic algorithms</b> select the best (truncation), then breed them with crossover and mutation. <a href="https://arxiv.org/abs/1712.06567">Such et al. (2017)</a> showed this simple scheme can train deep RL policies.</p>
+      <p><b>Differential Evolution</b> (Storn &amp; Price, 1997) mutates with the difference of two other members. Step sizes therefore shrink by themselves as the population converges. A trial replaces its parent only if it is at least as good.</p>
+      <p><b>Particle Swarm</b> (Kennedy &amp; Eberhart, 1995) gives each particle a velocity pulled toward its own best spot and the swarm's best spot.</p></div>
+
+    <div class="card" id="dust"><h4>Zeroth-order · Dust (node perturbation)</h4>
+      <p><a href="https://qlabs.sh/research/dust">"Dust: Pretraining Transformers Without Backpropagation"</a> (Dahal, Mandal, Gülbahar &amp; Vegesna, Q Labs, 2026). Every method above jitters the <em>weights</em>, so each candidate is a whole copy of the network and costs a whole forward pass. Dust jitters the <em>neurons</em> instead. This old idea, called <b>node perturbation</b>, is scaled up here to language-model pretraining.</p>
+      <ol class="steps">
+        <li><b>Jitter the neurons, not the weights.</b> Run the normal forward pass, but add a small random number σ·a to each neuron's output. Use fresh numbers for every data point (in the paper: every token) and for each of K draws.</li>
+        <li><b>Count virtual candidates.</b> Each (draw, data point) pair acts as one population member. Here 16 draws × 80 dots give 1,280 members. In a transformer with 16,384 tokens per batch, this makes populations of millions affordable.</li>
+        <li><b>Score each jitter locally.</b> For one data point, compare a draw's loss with the average loss of all draws on that same point: c = ℓ̄ − ℓ. A positive c means this jitter helped.</li>
+        <li><b>Turn helpful jitter into an error signal.</b> Average the jitters weighted by how much they helped: ĝ = −1/(Kσ) Σ c·a. This estimates what backprop's backward pass would compute at that neuron, "you should have been a bit higher or lower", without running anything backwards.</li>
+        <li><b>Finish like backprop.</b> A weight's gradient is the neuron's error signal times the weight's input, G<sub>W</sub> = Σ ĝ·xᵀ, the same local rule backprop ends with. Then an ordinary optimizer step (SGD with momentum).</li>
+      </ol>
+      <p>Compared with the boxes above, Dust keeps <b>one weight vector</b>, like backprop (no distribution, no population of networks). Its <b>ask</b> step puts the noise on activations, and its <b>shape</b> step scores each data point separately. In the playground, select a Dust draw: each neuron then shows the jitter it received for the selected dot.</p>
+      <p>In the paper, a 37.7M-parameter transformer trained this way reaches a test loss of 4.80 at 20M tokens, against 4.63 for backprop. The authors report it as orders of magnitude more efficient than weight-space ES such as EGGROLL. Attention layers also pass credit along the sequence with a decay γ; our tiny network has no sequence, so γ = 0. The 2-4-1 adaptation here is our own simplification.</p></div>
+
+    <div class="card" id="neat"><h4>Beyond fixed weights · NEAT</h4>
+      <p><a href="https://nn.cs.utexas.edu/downloads/papers/stanley.ec02.pdf">NeuroEvolution of Augmenting Topologies</a> (Stanley &amp; Miikkulainen, 2002) evolves the <em>architecture</em> as well as the weights. Every algorithm above searches over a fixed 17-number vector. NEAT's genome is a list of connection genes that grows over time.</p>
+      <svg viewBox="0 0 660 252" class="neat" role="img" aria-label="NEAT add-node and add-connection mutations">
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="ahead"/></marker></defs>
+        <text x="110" y="16" class="lhead">1 · minimal start</text>
+        <text x="330" y="16" class="lhead">2 · add node (split 1→3)</text>
+        <text x="550" y="16" class="lhead">3 · add connection 2→4</text>
+        <g class="g1">
+          <line x1="50" y1="55" x2="160" y2="95" marker-end="url(#ah)"/><line x1="50" y1="135" x2="160" y2="100" marker-end="url(#ah)"/>
+          <circle cx="40" cy="55" r="12"/><circle cx="40" cy="135" r="12"/><circle cx="172" cy="97" r="12" class="out"/>
+          <text x="40" y="59">1</text><text x="40" y="139">2</text><text x="172" y="101">3</text>
+        </g>
+        <g class="g1" transform="translate(220,0)">
+          <line x1="50" y1="55" x2="160" y2="95" class="disabled"/>
+          <line x1="50" y1="55" x2="96" y2="45" marker-end="url(#ah)" class="new"/><line x1="118" y1="47" x2="162" y2="88" marker-end="url(#ah)" class="new"/>
+          <line x1="50" y1="135" x2="160" y2="100" marker-end="url(#ah)"/>
+          <circle cx="40" cy="55" r="12"/><circle cx="40" cy="135" r="12"/><circle cx="108" cy="42" r="12" class="hid"/><circle cx="172" cy="97" r="12" class="out"/>
+          <text x="40" y="59">1</text><text x="40" y="139">2</text><text x="108" y="46">4</text><text x="172" y="101">3</text>
+        </g>
+        <g class="g1" transform="translate(440,0)">
+          <line x1="50" y1="55" x2="160" y2="95" class="disabled"/>
+          <line x1="50" y1="55" x2="96" y2="45" marker-end="url(#ah)"/><line x1="118" y1="47" x2="162" y2="88" marker-end="url(#ah)"/>
+          <line x1="50" y1="135" x2="160" y2="100" marker-end="url(#ah)"/><line x1="48" y1="125" x2="100" y2="54" marker-end="url(#ah)" class="new"/>
+          <circle cx="40" cy="55" r="12"/><circle cx="40" cy="135" r="12"/><circle cx="108" cy="42" r="12" class="hid"/><circle cx="172" cy="97" r="12" class="out"/>
+          <text x="40" y="59">1</text><text x="40" y="139">2</text><text x="108" y="46">4</text><text x="172" y="101">3</text>
+        </g>
+        <g class="genes" transform="translate(0,168)">
+          <text x="20" y="12">[1] 1→3</text><text x="20" y="26">[2] 2→3</text>
+          <text x="240" y="12" class="off">[1] 1→3 disabled</text><text x="240" y="26">[2] 2→3</text>
+          <text x="240" y="40" class="newt">[3] 1→4  w = 1</text><text x="240" y="54" class="newt">[4] 4→3  w = old w₁₃</text>
+          <text x="460" y="12">[1]–[4] unchanged</text><text x="460" y="26" class="newt">[5] 2→4  new weight</text>
+          <text x="20" y="76" class="small">[n] = innovation number: a global id stamped when a structural change first appears anywhere in the population.</text>
+        </g>
+      </svg>
+      <ul>
+        <li><b>Start minimal, complexify.</b> Inputs connect straight to outputs. Hidden nodes appear only through mutation, so NEAT tends to find small networks.</li>
+        <li><b>Add-node</b> splits a connection. The old gene is disabled, the incoming weight is 1 and the outgoing weight copies the old weight, so the network's behaviour barely changes at first.</li>
+        <li><b>Innovation numbers</b> make crossover between different topologies possible. Genes with the same number are aligned; the rest are <em>disjoint</em> or <em>excess</em>.</li>
+        <li><b>Speciation</b> groups genomes by δ = c₁E/N + c₂D/N + c₃·W̄ (excess, disjoint, mean weight difference). Fitness is shared within a species, so a new structure gets time to tune its weights before it has to compete.</li>
+      </ul>
+      <p>Compared with the boxes above: the state is an explicit population (like a GA), and ask is crossover plus <em>structural</em> mutation. Shape is fitness sharing within species, and tell is selection per species. The forward pass runs over whatever graph the genome encodes, not a fixed 2-4-1 net. On XOR, NEAT typically ends up with only one or two hidden nodes.</p></div>
+
+  </div>
+
+  <h2>5 · Backprop vs. evolution strategies</h2>
+  <div class="tablewrap"><table class="compare">
+    <tr><th></th><th>Backprop + GD</th><th>Evolution strategies</th></tr>
+    <tr><td>Needs</td><td>A differentiable model and loss</td><td>Only forward passes and a score. The model can be non-differentiable, discrete, or a whole simulator.</td></tr>
+    <tr><td>Signal</td><td>Exact local gradient of this loss</td><td>Gradient of a <em>smoothed</em> loss, or just a ranking of candidates</td></tr>
+    <tr><td>Cost per update</td><td>1 forward + 1 backward pass</td><td>N forward passes, but no backward pass and no stored activations</td></tr>
+    <tr><td>Parallelism</td><td>Workers exchange gradients of size D</td><td>Workers exchange scalar fitness values; noise can be regenerated from shared random seeds</td></tr>
+    <tr><td>Exploration</td><td>Follows the slope into the nearest basin</td><td>σ smooths away small bumps; populations can explore several basins</td></tr>
+    <tr><td>Scaling with D</td><td>Excellent</td><td>Gradient-estimate variance grows with D. Hence tricks like low-rank noise (EGGROLL), diagonal covariances and huge populations.</td></tr>
+  </table></div>
+
+  <h2>6 · How to use the playground</h2>
+  <ol>
+    <li>New here? Click <b>? Guided tour</b> (bottom right) for a 13-step walkthrough. It drives the playground for you.</li>
+    <li>Pick an algorithm from the family boxes at the top. The pipeline below them shows which component it uses at each stage.</li>
+    <li>Press <b>Next ▸</b> to run one stage at a time. The active box shows the formula and what just happened, with real numbers.</li>
+    <li>After <b>Ask</b>, click any population thumbnail to load that network into the forward-pass view and see its noise in the parameter vector.</li>
+    <li>Click a data point to trace it through the network. Hover over a neuron to see its weighted sum and activation.</li>
+    <li>Press <b>Run</b> to watch the decision map and the neurons' maps change, and compare how families behave on XOR vs. Circle.</li>
+  </ol>
+  <p class="refs">Built on ideas from <a href="https://github.com/RobertTLange/evosax">evosax</a> (Lange, 2022) and <a href="https://poloclub.github.io/cnn-explainer/">CNN Explainer</a> (Wang et al., 2020). The algorithms are simplified JavaScript re-implementations for teaching; for real work, use evosax.</p>
+</article>
+</main>
+</body>
+</html>
